@@ -20,6 +20,7 @@
   "devDependencies": {
     "webpack": "^2.2.0",
     "webpack-dev-server": "^2.5.1",
+    "zepto": "1.2.0",
     "css-loader": "^0.28.4",
     "less": "^2.7.2",
     "less-loader": "^2.2.2",
