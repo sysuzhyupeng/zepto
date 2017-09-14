@@ -51,7 +51,7 @@ var Zepto = (function () {
 	    	return chr ? chr.toUpperCase() : ''
 		})
 	}
-	/*
+		/*
 		第一个正则表达式是将字符串中的 :: 替换成 / 。a 变成 A6DExample/Before
 		第二个正则是在出现一次或多次大写字母和出现一次大写字母和连续一次或多次小写字母之间加入 _。a 变成 A6D_Example/Before
 		第三个正则是将出现一次小写字母或数字和出现一次大写字母之间加上 _。a 变成A6_D_Example/Before
@@ -127,6 +127,112 @@ var Zepto = (function () {
 	function isPlainObject(obj) {
   		return isObject(obj) && !isWindow(obj) && Object.getPrototypeOf(obj) == Object.prototype
 	}
+	/*
+		当 deep 为 true 时为深度复制， false 时为浅复制。
+	*/
+	function extend(target, source, deep) {
+        for (key in source)  // 遍历源对象的属性值
+            if (deep && (isPlainObject(source[key]) || isArray(source[key]))) { // 如果为深度复制，并且源对象的属性值为纯粹对象或者数组
+                if (isPlainObject(source[key]) && !isPlainObject(target[key])) // 如果为纯粹对象
+                    target[key] = {}  // 如果源对象的属性值为纯粹对象，并且目标对象对应的属性值不为纯粹对象，则将目标对象对应的属性值置为空对象
+                if (isArray(source[key]) && !isArray(target[key])) // 如果源对象的属性值为数组，并且目标对象对应的属性值不为数组，则将目标对象对应的属性值置为空数组
+                    target[key] = []
+                extend(target[key], source[key], deep) // 递归调用extend函数
+            } else if (source[key] !== undefined) target[key] = source[key]  // 不对undefined值进行复制
+    }
+    /*
+    	判断第一个参数 target 是否为布尔值，如果为布尔值，表示第一个参数为 deep ，
+    	那么第二个才为目标对象，因此需要重新为 target 赋值为 args.shift() 。
+    */
+    $.extend = function(target) {
+        var deep, args = slice.call(arguments, 1)
+        if (typeof target == 'boolean') {
+            deep = target
+            target = args.shift()
+        }
+        args.forEach(function(arg) { extend(target, arg, deep) })
+        return target
+    }
+    $.each = function(elements, callback) {
+        var i, key
+        if (likeArray(elements)) {  
+        	//类数组包含数组和类数组对象，直接用for循环用数字索引遍历
+            for (i = 0; i < elements.length; i++)
+                if (callback.call(elements[i], i, elements[i]) === false) return elements
+        } else { // 对象使用for in 循环
+            for (key in elements)
+                if (callback.call(elements[key], key, elements[key]) === false) return elements
+        }
+        return elements
+    }
+    $.map = function(elements, callback) {
+        var value, values = [],
+            i, key
+        if (likeArray(elements))
+            for (i = 0; i < elements.length; i++) {
+                value = callback(elements[i], i)
+                if (value != null) values.push(value)
+            }
+        else
+            for (key in elements) {
+                value = callback(elements[key], key)
+                if (value != null) values.push(value)
+            }
+        //最后拍平数组
+        return flatten(values)
+    }
+    $.contains = document.documentElement.contains ?
+        function(parent, node) {
+        	//contains方法存在的时候，只需要把相等情况排除
+            return parent !== node && parent.contains(node)
+        } :
+        //当contains方法不存在的时候，使用while循环(相当于递归调用)
+        function(parent, node) {
+            while (node && (node = node.parentNode))
+                if (node === parent) return true
+            return false
+        }
+    $.grep = function(elements, callback) {
+        return filter.call(elements, callback)
+    }
+    //直接使用indexOf
+    $.inArray = function(elem, array, i) {
+        return emptyArray.indexOf.call(array, elem, i)
+    }
+    $.isArray = isArray
+    $.isFunction = isFunction
+    $.isPlainObject = isPlainObject
+    $.isWindow = isWindow
+    /*
+    	在需要传递回调函数作为参数，但是又不想在回调函数中做任何事情的时候传递一个空函数即可
+    */
+    $.noop = function() {}
+    //在浏览器支持的情况下直接提供原生方法
+    if (window.JSON) $.parseJSON = JSON.parse
+    //增加str是否为null的判断
+    $.trim = function(str) {
+  		return str == null ? "" : String.prototype.trim.call(str)
+	}
+	$.type = type
+    /*
+    	判断是否为数值，需要满足以下条件
+		不为 null
+		不为布尔值
+		不为NaN(当传进来的参数不为数值或如'123'这样形式的字符串时，都会转换成NaN)
+		为有限数值
+		当传进来的参数为字符串的形式，如'123' 时，会用到下面这个条件来确保字符串为数字的形式，而不是如 123abc 这样的形式。(type != 'string' || val.length) && !isNaN(num) 。
+		这个条件的包含逻辑如下：如果为字符串类型，并且为字符串的长度大于零，并且转换成数组后的结果不为NaN，则断定为数值。（因为 Number('') 的值为 0）
+    */
+    $.isNumeric = function(val) {
+        var num = Number(val), // 将参数转换为Number类型
+            type = typeof val
+        return val != null && 
+          type != 'boolean' &&
+            (type != 'string' || val.length) &&
+          !isNaN(num) &&
+          isFinite(num) 
+          || false
+    }
 	function Z(doms) {
 	    var len = doms.length 
 	    for (var i = 0; i < len; i++) {
