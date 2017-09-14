@@ -9,6 +9,9 @@ var Zepto = (function () {
   	*/
   	var lass2type = {},
     toString = class2type.toString;
+    //在qsa查找中使用
+    var simpleSelectorRE = /^[\w-]*$/,
+    	fragmentRE = /^\s*<(\w+|!)[^>]*>/;
   	/*
   		定义这个空数组是为了取得数组的 concat、filter、slice 方法
   	*/
@@ -252,13 +255,66 @@ var Zepto = (function () {
 	    return new Z(doms)
 	}
 
-	zepto.init = function(doms) {
+	zepto.isZ = function(object) {
+  		return object instanceof zepto.Z
+	}
+	/*
+		simpleSelectorRE = /^[\w-]*$/,
+		a-z、A-Z、0-9、下划线、连词符 组合起来的单词，这其实就是单个 id 和 class 的命名规则。
+		
+		先从#号判断是否是Id,
+		再从.号判断是否class,
+		最后再判断是否为单个选择器
+	*/
+	zepto.qsa = function(element, selector) {
+        var found,  // 已经找的到DOM
+            maybeID = selector[0] == '#',  // 是否为ID
+            maybeClass = !maybeID && selector[0] == '.', // 是否为class
+            nameOnly = maybeID || maybeClass ? selector.slice(1) : selector,  // 将id或class前面的符号去掉
+            isSimple = simpleSelectorRE.test(nameOnly)  // 是否为单个选择器
+        return (element.getElementById && isSimple && maybeID) ? 
+            ((found = element.getElementById(nameOnly)) ? [found] : []) :
+            (element.nodeType !== 1 && element.nodeType !== 9 && element.nodeType !== 11) ? [] :
+            //slice.call将类数组转化成数组
+            slice.call(
+                isSimple && !maybeID && element.getElementsByClassName ? 
+                maybeClass ? element.getElementsByClassName(nameOnly) : 
+                element.getElementsByTagName(selector) : 
+                element.querySelectorAll(selector) 
+            )
+    }
+
+	zepto.init = function(selector, context) {
 		/*
 			$(doms)通过调用init方法，调用Z函数
 			返回新的对象
 		*/
-	    var doms = ['domObj1','domObj2','domObj3']
-	    return zepto.Z(doms)
+	    var dom  // dom 集合
+	    //当没有传入选择器的时候
+  		if (!selector) return zepto.Z()
+	    else if (typeof selector == 'string') { // 分支2
+		    selector = selector.trim()
+		    /*
+		    	fragmentRE = /^\s*<(\w+|!)[^>]*>/
+		    	用来判断字符串是否为标签。
+		    */
+		    if (selector[0] == '<' && fragmentRE.test(selector))
+		      dom = zepto.fragment(selector, RegExp.$1, context), selector = null
+		      else if (context !== undefined) return $(context).find(selector)
+		      else dom = zepto.qsa(document, selector)
+		}
+		else if (isFunction(selector)) return $(document).ready(selector) // 分支3
+		else if (zepto.isZ(selector)) return selector  // 分支4
+		else { // 分支5
+		    if (isArray(selector)) dom = compact(selector)
+		    else if (isObject(selector))
+		      dom = [selector], selector = null
+		      else if (fragmentRE.test(selector))
+		        dom = zepto.fragment(selector.trim(), RegExp.$1, context), selector = null
+		        else if (context !== undefined) return $(context).find(selector)
+		        else dom = zepto.qsa(document, selector)
+		}
+		return zepto.Z(dom, selector)
 	}
 
 	$ = function() {
