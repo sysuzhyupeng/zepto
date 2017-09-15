@@ -629,9 +629,14 @@ var Zepto = (function () {
 			      this.parentNode.removeChild(this)
 		    })
 		},
+		//将innerHTML清空
+		empty: function() {
+		  	return this.each(function() { this.innerHTML = '' })
+		},
 	}
 	/*
-		zepto 中 after、 prepend、 before、 append、insertAfter、 insertBefore、 appendTo 和 prependTo 都是通过这个相似方法生成器生成的
+		zepto 中 after、 prepend、 before、 append、insertAfter、 insertBefore、 appendTo 和 prependTo 
+		都是通过这个相似方法生成器生成的
 	*/
 	var adjacencyOperators = ['after', 'prepend', 'before', 'append']
 	function traverseNode(node, fun) {
@@ -641,52 +646,52 @@ var Zepto = (function () {
 	    traverseNode(node.childNodes[i], fun)
 	}
 	adjacencyOperators.forEach(function(operator, operatorIndex) {
-	  var inside = operatorIndex % 2 //=> prepend, append
+	    var inside = operatorIndex % 2 //=> prepend, append
 
-	  $.fn[operator] = function() {
-	    // arguments can be nodes, arrays of nodes, Zepto objects and HTML strings
-	    var argType, nodes = $.map(arguments, function(arg) {
-	      var arr = []
-	      argType = type(arg)
-	      if (argType == "array") {
-	        arg.forEach(function(el) {
-	          if (el.nodeType !== undefined) return arr.push(el)
-	          else if ($.zepto.isZ(el)) return arr = arr.concat(el.get())
-	          arr = arr.concat(zepto.fragment(el))
-	        })
-	        return arr
-	      }
-	      return argType == "object" || arg == null ?
-	        arg : zepto.fragment(arg)
-	    }),
-	        parent, copyByClone = this.length > 1
-	    if (nodes.length < 1) return this
+	    $.fn[operator] = function() {
+		    // arguments can be nodes, arrays of nodes, Zepto objects and HTML strings
+		    var argType, nodes = $.map(arguments, function(arg) {
+		      var arr = []
+		      argType = type(arg)
+		      if (argType == "array") {
+		        arg.forEach(function(el) {
+		          if (el.nodeType !== undefined) return arr.push(el)
+		          else if ($.zepto.isZ(el)) return arr = arr.concat(el.get())
+		          arr = arr.concat(zepto.fragment(el))
+		        })
+		        return arr
+		      }
+		      return argType == "object" || arg == null ?
+		        arg : zepto.fragment(arg)
+		    }),
+		        parent, copyByClone = this.length > 1
+		    if (nodes.length < 1) return this
 
-	    return this.each(function(_, target) {
-	      parent = inside ? target : target.parentNode
+	    	return this.each(function(_, target) {
+		      	parent = inside ? target : target.parentNode
+		      	// 用 insertBefore 来模拟所有操作
+		      	target = operatorIndex == 0 ? target.nextSibling :
+		      	operatorIndex == 1 ? target.firstChild :
+		      	operatorIndex == 2 ? target :
+		      	null
 
-	      // convert all methods to a "before" operation
-	      target = operatorIndex == 0 ? target.nextSibling :
-	      operatorIndex == 1 ? target.firstChild :
-	      operatorIndex == 2 ? target :
-	      null
+		      	var parentInDocument = $.contains(document.documentElement, parent)
 
-	      var parentInDocument = $.contains(document.documentElement, parent)
+		      	nodes.forEach(function(node) {
+			        if (copyByClone) node = node.cloneNode(true)
+			        else if (!parent) return $(node).remove()
 
-	      nodes.forEach(function(node) {
-	        if (copyByClone) node = node.cloneNode(true)
-	        else if (!parent) return $(node).remove()
-
-	        parent.insertBefore(node, target)
-	        if (parentInDocument) traverseNode(node, function(el) {
-	          if (el.nodeName != null && el.nodeName.toUpperCase() === 'SCRIPT' &&
-	              (!el.type || el.type === 'text/javascript') && !el.src) {
-	            var target = el.ownerDocument ? el.ownerDocument.defaultView : window
-	            target['eval'].call(target, el.innerHTML)
-	          }
-	        })
-	          })
-	    })
+			        parent.insertBefore(node, target)
+				        if (parentInDocument) traverseNode(node, function(el) {
+				          if (el.nodeName != null && el.nodeName.toUpperCase() === 'SCRIPT' &&
+				              (!el.type || el.type === 'text/javascript') && !el.src) {
+				            var target = el.ownerDocument ? el.ownerDocument.defaultView : window
+				            target['eval'].call(target, el.innerHTML)
+				          }
+				    })
+		        })
+	    	})
+		}
 	}
 
 	//将Z函数原型赋给$.fn，从Z函数构造返回的对象拥有fn上的方法
