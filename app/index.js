@@ -11,7 +11,8 @@ var Zepto = (function () {
     toString = class2type.toString;
     //在qsa查找中使用
     var simpleSelectorRE = /^[\w-]*$/,
-    	fragmentRE = /^\s*<(\w+|!)[^>]*>/;
+    	fragmentRE = /^\s*<(\w+|!)[^>]*>/,
+    	tagExpanderRE = /<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:]+)[^>]*)\/>/ig;
   	/*
   		定义这个空数组是为了取得数组的 concat、filter、slice 方法
   	*/
@@ -19,6 +20,20 @@ var Zepto = (function () {
 		concat = emptyArray.concat,
 	    filter = emptyArray.filter,
 	    slice = emptyArray.slice;
+	/*
+		当传入元素为tr时，需要被tbody包裹
+	*/
+	var table = document.createElement('table'),
+        tableRow = document.createElement('tr'),
+		containers = {
+		  'tr': document.createElement('tbody'),
+		  'tbody': table,
+		  'thead': table,
+		  'tfoot': table,
+		  'td': tableRow,
+		  'th': tableRow,
+		  '*': document.createElement('div')
+		};
 	function compact(array) {
 		/*
 			删除数组中的 null 和 undefined
@@ -283,6 +298,45 @@ var Zepto = (function () {
                 element.querySelectorAll(selector) 
             )
     }
+    /*
+    	fragment 的作用的是将html片断转换成dom数组形式。
+    */
+    zepto.fragment = function(html, name, properties) {
+	  	var dom, nodes, container
+	  	/*
+	  		首先判断是否为单标签的形式 singleTagRE.test(html) （如<div></div>）, 
+	  		如果是，则采用该标签名来创建dom对象 dom = $(document.createElement(RegExp.$1))，不用再作其他处理
+	  	*/
+	  	if (singleTagRE.test(html)) dom = $(document.createElement(RegExp.$1))
+	  	//如果不是单标签
+	  	if (!dom) {
+	  		/*
+	  			对 html 进行修复，如<p class="test" /> 修复成 <p class="test" /></p> 。
+	  			正则表达式为 tagExpanderRE = /<(?!area|br|col|embed|hr|img|input|link|meta|param)(([\w:]+)[^>]*)\/>/ig
+	  		*/
+		    if (html.replace) html = html.replace(tagExpanderRE, "<$1></$2>")
+		    if (name === undefined) name = fragmentRE.test(html) && RegExp.$1
+		    //in containers说明是特殊元素
+		    if (!(name in containers)) name = '*'
+		    container = containers[name]
+		    container.innerHTML = '' + html
+		    dom = $.each(slice.call(container.childNodes), function() {
+		      container.removeChild(this)
+		    })
+	  	}
+	  	if (isPlainObject(properties)) {
+		    nodes = $(dom)
+		    $.each(properties, function(key, value) {
+		       /*
+		       		methodAttributes = ['val', 'css', 'html', 'text', 'data', 'width', 'height', 'offset']
+		       		这些属性有单独的方法，其他都是使用attr
+		       */
+		       if (methodAttributes.indexOf(key) > -1) nodes[key](value)
+		       else nodes.attr(key, value)
+		    })
+		}
+	  	return dom
+	}
 
 	zepto.init = function(selector, context) {
 		/*
@@ -297,15 +351,25 @@ var Zepto = (function () {
 		    /*
 		    	fragmentRE = /^\s*<(\w+|!)[^>]*>/
 		    	用来判断字符串是否为标签。
+		    	如果selector 的第一个字符为 < ，并且为html标签 
 		    */
 		    if (selector[0] == '<' && fragmentRE.test(selector))
 		      dom = zepto.fragment(selector, RegExp.$1, context), selector = null
 		      else if (context !== undefined) return $(context).find(selector)
 		      else dom = zepto.qsa(document, selector)
 		}
+		/*
+			$(function() {})  在页面加载完毕后，再执行回调方法：$(document).ready(selector)
+		*/
 		else if (isFunction(selector)) return $(document).ready(selector) // 分支3
+		/*
+			如果参数已经为 Z 对象（zepto.isZ(selector)），直接原对象返回就可以了。
+		*/
 		else if (zepto.isZ(selector)) return selector  // 分支4
 		else { // 分支5
+			/*
+				如果为数组时（isArray(selector)）, 将数组展平(dom = compact(selector))
+			*/
 		    if (isArray(selector)) dom = compact(selector)
 		    else if (isObject(selector))
 		      dom = [selector], selector = null
