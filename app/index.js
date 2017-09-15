@@ -189,7 +189,7 @@ var Zepto = (function () {
         if (likeArray(elements))
             for (i = 0; i < elements.length; i++) {
                 value = callback(elements[i], i)
-                if (value != null) values.push(value)
+                if(value != null) values.push(value)
             }
         else
             for (key in elements) {
@@ -387,9 +387,58 @@ var Zepto = (function () {
 
 	$.fn = {
 	    constructor: zepto.Z,
-	    method: function(){
-	        return this
-	    }
+    	length: 0,
+    	forEach: emptyArray.forEach,
+    	reduce: emptyArray.reduce,
+    	push: emptyArray.push,
+    	splice: emptyArray.splice,
+    	indexOf: emptyArray.indexOf,
+	    get: function(idx) {
+	    	//如果idx没定义，直接返回整个数组，否则判断idx正负，负数再加上length
+  			return idx === undefined ? slice.call(this) : this[idx >= 0 ? idx : idx + this.length]
+		},
+		//内部调用get方法，slice成真正数组
+		toArray: function() { return this.get() },
+		size: function() {
+  			return this.length
+		},
+		concat: function() {
+		  	var i, value, args = []
+		  	//遍历concat的所有参数，如果是zepto对象(类数组)，则转成数组合并，单个元素直接保留
+		  	for (i = 0; i < arguments.length; i++) {
+			    value = arguments[i]
+			    args[i] = zepto.isZ(value) ? value.toArray() : value
+			}
+		  	return concat.apply(zepto.isZ(this) ? this.toArray() : this, args)
+		},
+		/*
+			可以在 map 的回调中通过 this 来拿到每个元素。
+			对 $.map 返回的数组调用了 $() 方法，
+			将返回的数组再次包装成 zepto 对象，因此调用 map 方法后得到的数组，同样具有 zepto 集合中的方法
+		*/
+		map: function(fn) {
+  			return $($.map(this, function(el, i) { return fn.call(el, i, el) }))
+		},
+		slice: function() {
+  			return $(slice.apply(this, arguments))
+		},
+		/*
+			调用的其实是数组的 every 方法，every 遇到 false 时就会中止遍历
+		*/
+		each: function(callback) {
+		  	emptyArray.every.call(this, function(el, idx) {
+		  		//可以在callback直接返回false来终止循环，因为不是在for循环中，直接break是没有用的
+		    	return callback.call(el, idx, el) !== false
+		 	})
+		  	return this
+		},
+		add: function(selector, context) {
+			/*
+				$(selector, context) 来获取符合条件的集合元素
+				调用 concat 方法来合并两个集合，用内部方法 uniq 来过滤掉重复的项
+			*/
+  			return $(uniq(this.concat($(selector, context))))
+		}
 	}
 	//将Z函数原型赋给$.fn，从Z函数构造返回的对象拥有fn上的方法
 	zepto.Z.prototype = Z.prototype = $.fn
