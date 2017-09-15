@@ -99,4 +99,72 @@
 		}
 	  	return event
 	}
+	var ignoreProperties = /^([A-Z]|returnValue$|layer[XY]$|webkitMovement[XY]$)/;
+	/*
+		事件触发的时候，返回给我们的 event 都不是原生的 event 对象，
+		都是代理对象，这个就是代理对象的创建方法
+		ignoreProperties 用来排除 A-Z 开头，即所有大写字母开头的属性，
+		还有以returnValue 结尾，layerX/layerY ，webkitMovementX/webkitMovementY 结尾的非标准属性
+	*/
+	function createProxy(event) {
+		//在proxy对象的originalEvent中存储event
+	  	var key, proxy = { originalEvent: event }
+	  	for (key in event)
+	  	//然后进行拷贝
+	    if (!ignoreProperties.test(key) && event[key] !== undefined) proxy[key] = event[key]
+
+	    return compatible(proxy, event)
+	}
+	/*
+		返回 true 表示在捕获阶段执行事件句柄，否则在冒泡阶段执行。
+
+		如果存在事件代理，并且事件为 focus/blur 事件，
+		在浏览器不支持 focusin/focusout 事件时，设置为 true ，
+		在捕获阶段处理事件，间接达到冒泡的目的
+	*/
+	function eventCapture(handler, captureSetting) {
+	  	return handler.del &&
+		    (!focusinSupported && (handler.e in focus)) ||
+		    !!captureSetting
+	}
+	/*
+		element // 事件绑定的元素
+		events // 需要绑定的事件列表
+		fn // 事件执行时的句柄
+		data // 事件执行时，传递给事件对象的数据
+		selector // 事件绑定元素的选择器
+		delegator // 事件委托函数 
+		capture // 那个阶段执行事件句柄
+		add 方法是向元素添加事件及事件响应，参数比较多
+	*/
+	function add(element, events, fn, data, selector, delegator, capture){
+		//获取或设置 id之后，set 为事件句柄容器
+		var id = zid(element), set = (handlers[id] || (handlers[id] = []))
+		events.split(/\s/).forEach(function(event){
+		    if (event == 'ready') return $(document).ready(fn)
+		    var handler   = parse(event)
+		    handler.fn    = fn
+		    handler.sel   = selector
+		    // emulate mouseenter, mouseleave
+		    if (handler.e in hover) fn = function(e){
+		        var related = e.relatedTarget
+		        if (!related || (related !== this && !$.contains(this, related)))
+		            return handler.fn.apply(this, arguments)
+		        }
+		    handler.del   = delegator
+		    var callback  = delegator || fn
+		    handler.proxy = function(e){
+		        e = compatible(e)
+		        if (e.isImmediatePropagationStopped()) return
+		        e.data = data
+		        var result = callback.apply(element, e._args == undefined ? [e] : [e].concat(e._args))
+		        if (result === false) e.preventDefault(), e.stopPropagation()
+		        return result
+		    }
+		    handler.i = set.length
+		    set.push(handler)
+		    if ('addEventListener' in element)
+		      element.addEventListener(realEvent(handler.e), handler.proxy, eventCapture(handler, capture))
+		})
+	}
 })(Zepto)
