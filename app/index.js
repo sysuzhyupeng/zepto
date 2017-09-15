@@ -34,6 +34,7 @@ var Zepto = (function () {
 		  'th': tableRow,
 		  '*': document.createElement('div')
 		};
+
 	function compact(array) {
 		/*
 			删除数组中的 null 和 undefined
@@ -145,6 +146,21 @@ var Zepto = (function () {
 	function isPlainObject(obj) {
   		return isObject(obj) && !isWindow(obj) && Object.getPrototypeOf(obj) == Object.prototype
 	}
+
+	function children(element) {
+		/*
+			浏览器也有原生支持元素 children 属性，要到IE9以上才支持，
+		*/
+  		return 'children' in element ?
+    		slice.call(element.children) :
+    	//将element.childNodes传入(可能包含空格节点)
+  		$.map(element.childNodes, function(node) { if (node.nodeType == 1) return node })
+	}
+	//匹配指定选择器的元素从集合中过滤出来
+	function filtered(nodes, selector) {
+		//如果没有指定 selector ，则将集合包裹成 zepto 对象全部返回
+  		return selector == null ? $(nodes) : $(nodes).filter(selector)
+	}
 	/*
 		当 deep 为 true 时为深度复制， false 时为浅复制。
 	*/
@@ -183,6 +199,9 @@ var Zepto = (function () {
         }
         return elements
     }
+    /*
+    	既可以处理类数组，也可以处理对象
+    */
     $.map = function(elements, callback) {
         var value, values = [],
             i, key
@@ -380,6 +399,27 @@ var Zepto = (function () {
 		}
 		return zepto.Z(dom, selector)
 	}
+	//判断元素是否匹配指定的选择器
+	zepto.matches = function(element, selector) {
+		//确保 selector 和 element 两个参数都有传递，并且 element 参数的 nodeType 为 ELEMENT_NODE
+	 	if (!selector || !element || element.nodeType !== 1) return false
+	 	/*
+	 		检测浏览器是否原生支持 matches 方法，(IE9开始支持)
+	 		或者支持带私有前缀的 matches 方法，如果支持，调用原生的 matches ，并将结果返回
+	 	*/
+	  	var matchesSelector = element.matches || element.webkitMatchesSelector ||
+	      element.mozMatchesSelector || element.oMatchesSelector ||
+	      element.matchesSelector
+	  	if (matchesSelector) return matchesSelector.call(element, selector)
+	  	
+	  	var match, parent = element.parentNode,
+	      temp = !parent
+	  	if (temp)(parent = tempParent).appendChild(element)
+
+	    match = ~zepto.qsa(parent, selector).indexOf(element)
+	    temp && tempParent.removeChild(element)
+	    return match
+	}
 
 	$ = function() {
 	    return zepto.init()
@@ -438,11 +478,219 @@ var Zepto = (function () {
 				调用 concat 方法来合并两个集合，用内部方法 uniq 来过滤掉重复的项
 			*/
   			return $(uniq(this.concat($(selector, context))))
-		}
+		},
+		filter: function(selector) {
+			//调用两次not相当于filter
+		  	if (isFunction(selector)) return this.not(this.not(selector))
+		  	return $(filter.call(this, function(element) {
+	    		return zepto.matches(element, selector)
+		  	}))
+		},
+		/*
+			将集合中不符合条件的元素查找出来,
+			not(selector)   
+			not(collection)   
+			not(function(index){ ... })   
+		*/
+		not: function(selector) {
+		  	var nodes = []
+		    if (isFunction(selector) && selector.call !== undefined)
+			    this.each(function(idx) {
+			      	if (!selector.call(this, idx)) nodes.push(this)
+		        })
+		    else {
+		        var excludes = typeof selector == 'string' ? this.filter(selector) :
+		      (likeArray(selector) && isFunction(selector.item)) ? slice.call(selector) : $(selector)
+		        this.forEach(function(el) {
+		        	if (excludes.indexOf(el) < 0) nodes.push(el)
+		        })
+		    }
+		 	return $(nodes)
+		},
+		//判断集合中的第一个元素是否匹配指定的选择器。
+		is: function(selector) {
+  			return this.length > 0 && zepto.matches(this[0], selector)
+		},
+		/*
+			查找集合中符合选择器的所有后代元素,
+			find(selector)   
+			find(collection)   
+			find(element)
+		*/
+		find: function(selector) {
+		    var result, $this = this
+		    if (!selector) result = $()
+		    else if (typeof selector == 'object')
+		    result = $(selector).filter(function() {
+		        var node = this
+		        return emptyArray.some.call($this, function(parent) {
+		        	return $.contains(parent, node)
+		      	})
+		    })
+		    else if (this.length == 1) result = $(zepto.qsa(this[0], selector))
+		    else result = this.map(function() { return zepto.qsa(this, selector) })
+		    return result
+		},
+		/*
+			集合中是否有包含指定条件的子元素
+			has(selector) 
+			has(node)
+		*/
+		has: function(selector) {
+		  	return this.filter(function(){
+		    	return isObject(selector) ?
+		      	$.contains(this, selector) :
+		    	$(this).find(selector).size()
+		    })
+		},
+		eq: function(idx) {
+			/*
+				如果 idx 为 -1 时，直接调用 this.slice(idx) ，
+				即取出最后一个元素，否则取 idx 至 idx + 1 之间的元素，
+				也就是每次只取一个元素
+			*/
+			//+idx的+表示类型转换，确保 idx 在做加法的时候为Number类型
+		  	return idx === -1 ? this.slice(idx) : this.slice(idx, +idx + 1)
+		},
+		first: function() {
+		  	var el = this[0]
+		  	return el && !isObject(el) ? el : $(el)
+		},
+		last: function() {
+		  	var el = this[this.length - 1]
+		  	return el && !isObject(el) ? el : $(el)
+		},
+		/*
+			从元素本身向上查找，返回最先符合条件的元素
+			closest(selector, [context])  
+			closest(collection) 
+			closest(element) 
+		*/
+		closest: function(selector, context) {
+		  	var nodes = [],
+		      collection = typeof selector == 'object' && $(selector)
+		  	this.each(function(_, node) {
+		    	while (node && !(collection ? collection.indexOf(node) >= 0 : zepto.matches(node, selector)))
+		      	node = node !== context && !isDocument(node) && node.parentNode
+		      	if (node && nodes.indexOf(node) < 0) nodes.push(node)
+		    })
+		  	return $(nodes)
+		},
+		//返回集合中所有元素指定的属性值, pluck获取
+		pluck: function(property) {
+		  	return $.map(this, function(el) { return el[property] })
+		},
+		//返回集合中所有元素的所有祖先元素。
+		parents: function(selector) {
+		  	var ancestors = [],
+		      	nodes = this
+		  	while (nodes.length > 0)
+		    nodes = $.map(nodes, function(node) {
+		      if ((node = node.parentNode) && !isDocument(node) && ancestors.indexOf(node) < 0) {
+		        ancestors.push(node)
+		        return node
+		      }
+		    })
+		    return filtered(ancestors, selector)
+		},
+		//parent 返回只是父级元素
+		parent: function(selector) {
+		  	return filtered(uniq(this.pluck('parentNode')), selector)
+		},
+		children: function(selector) {
+		  	return filtered(this.map(function() { return children(this) }), selector)
+		},
+		//contents 还返回文本节点和注释节点。也返回 iframe 的 contentDocument
+		contents: function() {
+		  	return this.map(function() { return this.contentDocument || slice.call(this.childNodes) })
+		},
+		//获取所有集合中所有元素的兄弟节点
+		siblings: function(selector) {
+		  	return filtered(this.map(function(i, el) {
+		    	return filter.call(children(el.parentNode), function(child) { return child !== el })
+		  	}), selector)
+		},
+		//获取集合中每个元素的前一个兄弟节点
+		prev: function(selector) { 
+			return $(this.pluck('previousElementSibling')).filter(selector || '*') 
+		},
+		//每个元素的下一个兄弟节点 
+		next: function(selector) { 
+			return $(this.pluck('nextElementSibling')).filter(selector || '*') 
+		},
+		//返回指定元素在当前集合中的位置
+		index: function(element) {
+  			return element ? this.indexOf($(element)[0]) : this.parent().children().indexOf(this[0])
+		},
+		//遍历选取类数组对象，获得parentNode引用之后使用removeChild方法
+		remove: function() {
+		  	return this.each(function() {
+			    if (this.parentNode != null)
+			      this.parentNode.removeChild(this)
+		    })
+		},
 	}
+	/*
+		zepto 中 after、 prepend、 before、 append、insertAfter、 insertBefore、 appendTo 和 prependTo 都是通过这个相似方法生成器生成的
+	*/
+	var adjacencyOperators = ['after', 'prepend', 'before', 'append']
+	function traverseNode(node, fun) {
+		//对node和其子孙节点调用fun函数
+	  	fun(node)
+	  	for (var i = 0, len = node.childNodes.length; i < len; i++)
+	    traverseNode(node.childNodes[i], fun)
+	}
+	adjacencyOperators.forEach(function(operator, operatorIndex) {
+	  var inside = operatorIndex % 2 //=> prepend, append
+
+	  $.fn[operator] = function() {
+	    // arguments can be nodes, arrays of nodes, Zepto objects and HTML strings
+	    var argType, nodes = $.map(arguments, function(arg) {
+	      var arr = []
+	      argType = type(arg)
+	      if (argType == "array") {
+	        arg.forEach(function(el) {
+	          if (el.nodeType !== undefined) return arr.push(el)
+	          else if ($.zepto.isZ(el)) return arr = arr.concat(el.get())
+	          arr = arr.concat(zepto.fragment(el))
+	        })
+	        return arr
+	      }
+	      return argType == "object" || arg == null ?
+	        arg : zepto.fragment(arg)
+	    }),
+	        parent, copyByClone = this.length > 1
+	    if (nodes.length < 1) return this
+
+	    return this.each(function(_, target) {
+	      parent = inside ? target : target.parentNode
+
+	      // convert all methods to a "before" operation
+	      target = operatorIndex == 0 ? target.nextSibling :
+	      operatorIndex == 1 ? target.firstChild :
+	      operatorIndex == 2 ? target :
+	      null
+
+	      var parentInDocument = $.contains(document.documentElement, parent)
+
+	      nodes.forEach(function(node) {
+	        if (copyByClone) node = node.cloneNode(true)
+	        else if (!parent) return $(node).remove()
+
+	        parent.insertBefore(node, target)
+	        if (parentInDocument) traverseNode(node, function(el) {
+	          if (el.nodeName != null && el.nodeName.toUpperCase() === 'SCRIPT' &&
+	              (!el.type || el.type === 'text/javascript') && !el.src) {
+	            var target = el.ownerDocument ? el.ownerDocument.defaultView : window
+	            target['eval'].call(target, el.innerHTML)
+	          }
+	        })
+	          })
+	    })
+	}
+
 	//将Z函数原型赋给$.fn，从Z函数构造返回的对象拥有fn上的方法
 	zepto.Z.prototype = Z.prototype = $.fn
-
 	return $
 })()
 window.Zepto = Zepto
