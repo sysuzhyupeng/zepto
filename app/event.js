@@ -173,11 +173,89 @@
 	var specialEvents={},
 	specialEvents.click = specialEvents.mousedown = specialEvents.mouseup = specialEvents.mousemove = 'MouseEvents'
 
+	/*
+		创建并初始化一个指定的dom事件对象, 如果给定了props，则将其扩展到事件对象上,
+		返回一个经过初始化了的事件对象
+	*/
 	$.Event = function(type, props) {
 	    if (!isString(type)) props = type, type = props.type
+	    /*
+	    	createEvent(eventType)该方法将创建一种新的事件类型，该类型由参数eventType指定
+	    	event.initEvent(type, bubbles, cancelable)初始化事件，
+	    	bubbles是一个 Boolean 值，决定是否事件是否应该向上冒泡. 一旦设置了这个值，只读属性Event.bubbles也会获取相应的值. 
+	    	cancelable是一个 Boolean 值，决定该事件的默认动作是否可以被取消. 一旦设置了这个值, 只读属性 Event.cancelable 也会获取相应的值.
+		*/
 	    var event = document.createEvent(specialEvents[type] || 'Events'), bubbles = true
+		//for in循环拷贝传入的props对象属性到event上
 	    if (props) for (var name in props) (name == 'bubbles') ? (bubbles = !!props[name]) : (event[name] = props[name])
 	    event.initEvent(type, bubbles, true)
 	    return compatible(event)
+	}
+	//on 方法来用给元素绑定事件，最终调用的是add方法
+	$.fn.on = function(event, selector, data, callback, one){
+	    var autoRemove, delegator, $this = this
+	    //修正参数
+	    if (event && !isString(event)) {
+		    $.each(event, function(type, fn){
+		      	$this.on(type, selector, data, fn, one)
+		    })
+		    return $this
+	    }
+	  if (!isString(selector) && !isFunction(callback) && callback !== false)
+	    callback = data, data = selector, selector = undefined
+	    if (callback === undefined || data === false)
+	      callback = data, data = undefined
+
+	      if (callback === false) callback = returnFalse   
+
+	      return $this.each(function(_, element){
+	      	/*
+	      		autoRemove 表示在执行完事件响应后，自动解绑的函数
+	      		autoRemove主要调用remove方法去除事件绑定，并且通过闭包拿到callback回调
+	      	*/
+	        if (one) autoRemove = function(e){
+	          remove(element, e.type, callback)
+	          return callback.apply(this, arguments)
+	        }
+	        /*
+	        	事件委托函数
+	        */
+	        if (selector) delegator = function(e){
+	        	//closest从事件的目标元素 e.target 开始向上查找，返回第一个匹配 selector 的元素
+	          var evt, match = $(e.target).closest(selector, element).get(0)
+	          //如果找到匹配的委托元素
+	          if (match && match !== element){
+	          	/*
+	          		调用 createProxy 方法，为当前事件对象创建代理对象，
+	          		再调用 $.extend 方法，为代理对象扩展 currentTarget 和 liveFired 属性，将代理元素和触发事件的元素保存到事件对象中
+	          		最后执行句柄函数，以代理元素 match 作为句柄的上下文，用代理后的 event 对象 evt 替换掉原句柄函数的第一个参数
+	          	*/
+	            evt = $.extend(createProxy(e), {currentTarget: match, liveFired: element})
+	            return (autoRemove || callback).apply(match, [evt].concat(slice.call(arguments, 1)))
+	          }
+	        }
+
+	        add(element, event, callback, data, selector, delegator || autoRemove)
+	      })
+	}
+	$.fn.off = function(event, selector, callback){
+	    var $this = this
+	    //修正参数
+	    if (event && !isString(event)) {
+		    $.each(event, function(type, fn){
+		    	//修正之后重新调用
+		        $this.off(type, selector, fn)
+		    })
+		    return $this
+	    }
+
+	    if (!isString(selector) && !isFunction(callback) && callback !== false)
+	    	callback = selector, selector = undefined
+
+	    	if (callback === false) callback = returnFalse
+
+	    	return $this.each(function(){
+	      		remove(this, event, callback, selector)
+	    	})
 	}
 })(Zepto)
