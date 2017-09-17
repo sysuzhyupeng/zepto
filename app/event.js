@@ -18,6 +18,18 @@
 		*/
   		return {e: parts[0], ns: parts.slice(1).sort().join(' ')}
 	}
+	function remove(element, events, fn, selector, capture){
+	    var id = zid(element)
+	   ;(events || '').split(/\s/).forEach(function(event){
+	        findHandlers(element, event, fn, selector).forEach(function(handler){
+	        	//删除handlers对象上的属性
+	        	delete handlers[id][handler.i]
+	            if ('removeEventListener' in element)
+	           	//元素removeEventListener
+	        	element.removeEventListener(realEvent(handler.e), handler.proxy, eventCapture(handler, capture))
+	        })
+	  })
+	}
 	function matcherFor(ns) {
 		//最终生成的正则为 /(?:^| )ns1.* ?ns2.* ?ns3(?: |$)/
  		return new RegExp('(?:^| )' + ns.replace(' ', ' .* ?') + '(?: |$)')
@@ -72,7 +84,7 @@
 		};
 	function compatible(event, source) {
 		/*
-			compatible 函数用来修正 event 对象的浏览器差异，
+			compatible 函数用来修正 event 对象的浏览器差异，使返回的event对象具有一致性
 			向 event 对象中添加了 isDefaultPrevented、isImmediatePropagationStopped、isPropagationStopped 几个方法，
 			对不支持 timeStamp 的浏览器，向 event 对象中添加 timeStamp 属性
 		*/
