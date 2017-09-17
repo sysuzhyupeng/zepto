@@ -151,7 +151,8 @@
 	*/
 	function add(element, events, fn, data, selector, delegator, capture){
 		//获取或设置 id之后，set 为事件句柄容器
-		var id = zid(element), set = (handlers[id] || (handlers[id] = []))
+		var id = zid(element),
+			 set = (handlers[id] || (handlers[id] = []))
 		events.split(/\s/).forEach(function(event){
 		    if (event == 'ready') return $(document).ready(fn)
 		    var handler   = parse(event)
@@ -167,7 +168,7 @@
 		    handler.del   = delegator
 		    var callback  = delegator || fn
 		    handler.proxy = function(e){
-		    	//e 为事件执行时的原生 event 对象，因此先调用 compatible 对 e 进行修正。
+		    	//e 为事件执行时的原生 event 对象，拿到统一接口的event对象。
 		        e = compatible(e)
 		        if (e.isImmediatePropagationStopped()) return
 		        //再扩展 e 对象，将 data 存到 e 的 data 属性上
@@ -177,6 +178,7 @@
 		        return result
 		    }
 		    handler.i = set.length
+		    //将handler push进handles数组中
 		    set.push(handler)
 		    if ('addEventListener' in element)
 		      element.addEventListener(realEvent(handler.e), handler.proxy, eventCapture(handler, capture))
@@ -203,6 +205,25 @@
 	    event.initEvent(type, bubbles, true)
 	    return compatible(event)
 	}
+	//返回的是一个代理后改变执行上下文的函数。
+	$.proxy = function(fn, context) {
+		//如果提供超过3个参数，则去除前两个参数，将后面的参数作为执行函数 fn 的参
+	    var args = (2 in arguments) && slice.call(arguments, 2)
+	    if (isFunction(fn)) {
+	        var proxyFn = function(){ return fn.apply(context, args ? args.concat(slice.call(arguments)) : arguments) }
+	        proxyFn._zid = zid(fn)
+	        return proxyFn
+	    } else if (isString(context)) {
+		    if (args) {
+		        args.unshift(fn[context], fn)
+		        return $.proxy.apply(null, args)
+		    } else {
+		        return $.proxy(fn[context], fn)
+		    }
+	    } else {
+	        throw new TypeError("expected function")
+	    }
+	}
 	//on 方法来用给元素绑定事件，最终调用的是add方法
 	$.fn.on = function(event, selector, data, callback, one){
 	    var autoRemove, delegator, $this = this
@@ -213,42 +234,42 @@
 		    })
 		    return $this
 	    }
-	  if (!isString(selector) && !isFunction(callback) && callback !== false)
-	    callback = data, data = selector, selector = undefined
-	    if (callback === undefined || data === false)
-	      callback = data, data = undefined
+	    if (!isString(selector) && !isFunction(callback) && callback !== false)
+	        callback = data, data = selector, selector = undefined
+	        if (callback === undefined || data === false)
+	            callback = data, data = undefined
 
-	      if (callback === false) callback = returnFalse   
+	      		if (callback === false) callback = returnFalse   
 
-	      return $this.each(function(_, element){
-	      	/*
-	      		autoRemove 表示在执行完事件响应后，自动解绑的函数
-	      		autoRemove主要调用remove方法去除事件绑定，并且通过闭包拿到callback回调
-	      	*/
-	        if (one) autoRemove = function(e){
-	          remove(element, e.type, callback)
-	          return callback.apply(this, arguments)
-	        }
-	        /*
-	        	事件委托函数
-	        */
-	        if (selector) delegator = function(e){
-	        	//closest从事件的目标元素 e.target 开始向上查找，返回第一个匹配 selector 的元素
-	          var evt, match = $(e.target).closest(selector, element).get(0)
-	          //如果找到匹配的委托元素
-	          if (match && match !== element){
-	          	/*
-	          		调用 createProxy 方法，为当前事件对象创建代理对象，
-	          		再调用 $.extend 方法，为代理对象扩展 currentTarget 和 liveFired 属性，将代理元素和触发事件的元素保存到事件对象中
-	          		最后执行句柄函数，以代理元素 match 作为句柄的上下文，用代理后的 event 对象 evt 替换掉原句柄函数的第一个参数
-	          	*/
-	            evt = $.extend(createProxy(e), {currentTarget: match, liveFired: element})
-	            return (autoRemove || callback).apply(match, [evt].concat(slice.call(arguments, 1)))
-	          }
-	        }
+	        return $this.each(function(_, element){
+		      	/*
+		      		autoRemove 表示在执行完事件响应后，自动解绑的函数
+		      		autoRemove主要调用remove方法去除事件绑定，并且通过闭包拿到callback回调
+		      	*/
+		        if (one) autoRemove = function(e){
+		          remove(element, e.type, callback)
+		          return callback.apply(this, arguments)
+		        }
+		        /*
+		        	事件委托函数
+		        */
+		        if (selector) delegator = function(e){
+		        	//closest从事件的目标元素 e.target 开始向上查找，返回第一个匹配 selector 的元素
+		          var evt, match = $(e.target).closest(selector, element).get(0)
+		          //如果找到匹配的委托元素
+		          if (match && match !== element){
+		          	/*
+		          		调用 createProxy 方法，为当前事件对象创建代理对象，
+		          		再调用 $.extend 方法，为代理对象扩展 currentTarget 和 liveFired 属性，将代理元素和触发事件的元素保存到事件对象中
+		          		最后执行句柄函数，以代理元素 match 作为句柄的上下文，用代理后的 event 对象 evt 替换掉原句柄函数的第一个参数
+		          	*/
+		            evt = $.extend(createProxy(e), {currentTarget: match, liveFired: element})
+		            return (autoRemove || callback).apply(match, [evt].concat(slice.call(arguments, 1)))
+		          }
+		        }
 
-	        add(element, event, callback, data, selector, delegator || autoRemove)
-	      })
+		        add(element, event, callback, data, selector, delegator || autoRemove)
+	        })
 	}
 	$.fn.off = function(event, selector, callback){
 	    var $this = this
@@ -269,5 +290,56 @@
 	    	return $this.each(function(){
 	      		remove(this, event, callback, selector)
 	    	})
+	}
+	$.fn.bind = function(event, data, callback){
+		return this.on(event, data, callback)
+	}
+	$.fn.unbind = function(event, callback){
+  		return this.off(event, callback)
+	}
+	$.fn.one = function(event, selector, data, callback){
+		return this.on(event, selector, data, callback, 1)
+	}
+	//事件委托，也是调用 on 方法，只是 selector 一定要传递。
+	$.fn.delegate = function(selector, event, callback){
+  		return this.on(event, selector, callback)
+	}
+	$.fn.undelegate = function(selector, event, callback){
+  		return this.off(event, selector, callback)
+	}
+	$.fn.live = function(event, callback){
+		//live获取当前的zepto对象进行事件绑定
+  		$(document.body).delegate(this.selector, event, callback)
+  		return this
+	}
+	$.fn.die = function(event, callback){
+  		$(document.body).undelegate(this.selector, event, callback)
+  		return this
+	}
+	//直接触发事件回调函数
+	$.fn.triggerHandler = function(event, args){
+	    var e, result
+	    this.each(function(i, element){
+	    	//如果 event 为字符串时，则调用 $.Event 工具函数来初始化一个事件对象，再调用 createProxy 来创建一个 event 代理对象。
+	        e = createProxy(isString(event) ? $.Event(event) : event)
+	    	e._args = args
+	    	e.target = element
+	    	$.each(findHandlers(element, event.type || event), function(i, handler){
+	      		result = handler.proxy(e)
+	      		if (e.isImmediatePropagationStopped()) return false
+	        })
+	    })
+	  return result
+	}
+	$.fn.trigger = function(event, args){
+	    event = (isString(event) || $.isPlainObject(event)) ? $.Event(event) : compatible(event)
+	    event._args = args
+	    return this.each(function(){
+	       //如果是 focus/blur 方法，则直接调用 this.focus() 或 this.blur() 方法
+	       if (event.type in focus && typeof this[event.type] == "function") this[event.type]()
+	       // items in the collection might not be DOM elements
+	       else if ('dispatchEvent' in this) this.dispatchEvent(event)
+	       else $(this).triggerHandler(event, args)
+	    })
 	}
 })(Zepto)
