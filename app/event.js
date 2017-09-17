@@ -143,6 +143,7 @@
 		events.split(/\s/).forEach(function(event){
 		    if (event == 'ready') return $(document).ready(fn)
 		    var handler   = parse(event)
+			//将参数赋给handeler对象，缓存起来
 		    handler.fn    = fn
 		    handler.sel   = selector
 		    // emulate mouseenter, mouseleave
@@ -154,8 +155,10 @@
 		    handler.del   = delegator
 		    var callback  = delegator || fn
 		    handler.proxy = function(e){
+		    	//e 为事件执行时的原生 event 对象，因此先调用 compatible 对 e 进行修正。
 		        e = compatible(e)
 		        if (e.isImmediatePropagationStopped()) return
+		        //再扩展 e 对象，将 data 存到 e 的 data 属性上
 		        e.data = data
 		        var result = callback.apply(element, e._args == undefined ? [e] : [e].concat(e._args))
 		        if (result === false) e.preventDefault(), e.stopPropagation()
