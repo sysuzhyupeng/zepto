@@ -1,3 +1,26 @@
+/*
+	事件触发案例
+*/
+let $list = document.querySelector('.list')
+let $item1 = document.querySelector('.item1')
+
+$list.addEventListener('click', function () {
+  console.log(this.innerHTML)
+}, false)
+
+$item1.addEventListener('click', function () {
+  console.log(this.innerHTML)
+}, false)
+
+// 1. 创建一个事件对象 document.createEvent(event)
+let event = document.createEvent('Event')
+// 2. 初始化事件对象 event.initEvent(type, bubbles, true)
+event.initEvent('click', true, true)
+// 3. 分发事件  dom.dispatchEvent(event)
+$item1.dispatchEvent(event)
+
+
+
 var Zepto = (function () {
   	var zepto = {}, $;
   	/*
@@ -720,4 +743,4 @@ var Zepto = (function () {
 window.Zepto = Zepto
 //如果window.$ 是undefined则window.$ = Zepto
 window.$ === undefined && (window.$ = Zepto)
-require('./event')
+// require('./event')
