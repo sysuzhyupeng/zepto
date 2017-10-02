@@ -1,8 +1,11 @@
 (function($){
 	/*
-		跟 focus 和 blur 一样，mouseenter 和 mouseleave 也不支持事件的冒泡，
-		但是 mouseover 和 mouseout 支持事件冒泡，因此，这两个事件的冒泡处理也可以分别用 mouseover 和 mouseout 来模拟。
+		event主要做了这几件事：
+		统一不同浏览器的 event 对象
+		事件缓存池，方便手动触发事件和解绑事件（因此手动触发事件是同步的操作）。
+		事件委托
 	*/
+	//这个方法用来标记已经绑定过事件的元素，方便查找。
 	var _zid = 1;
 	function zid(element){
 		return element._zid || (element._zid = _zid++)
@@ -15,8 +18,14 @@
 		var parts = ('' + event).split('.')
 		/*
 			ns1 ns2 ns3 
+			返回的对象中，e 为事件名， ns 为排序后，以空格相连的命名空间字符串，形如ns1 ns2 ns3 ... 的形式。
 		*/
   		return {e: parts[0], ns: parts.slice(1).sort().join(' ')}
+	}
+	function matcherFor(ns) {
+		//生成匹配命名空间的表达式
+		//最终生成的正则为 /(?:^| )ns1.* ?ns2.* ?ns3(?: |$)/
+ 		return new RegExp('(?:^| )' + ns.replace(' ', ' .* ?') + '(?: |$)')
 	}
 	function remove(element, events, fn, selector, capture){
 	    var id = zid(element)
@@ -30,13 +39,10 @@
 	        })
 	  })
 	}
-	function matcherFor(ns) {
-		//最终生成的正则为 /(?:^| )ns1.* ?ns2.* ?ns3(?: |$)/
- 		return new RegExp('(?:^| )' + ns.replace(' ', ' .* ?') + '(?: |$)')
-	}
 	/*
+		事件对象如下
 		{
-		  fn: '', // 函数
+		  fn: '', // 回调函数
 		  e: '', // 事件名
 		  ns: '', // 命名空间
 		  sel: '',  // 选择器
@@ -45,6 +51,7 @@
 		  proxy: '', // 代理函数
 		}
 	*/
+	////handlers为全局句柄对象
 	var handlers = {}
 	function findHandlers(element, event, fn, selector) {
 		/*
@@ -53,25 +60,44 @@
 	  	event = parse(event)
 	  	//如果命名空间存在
 	  	if (event.ns) var matcher = matcherFor(event.ns)
-	  		//返回的其实是 handlers[zid(element)] 中符合条件的句柄函数
-		  	return (handlers[zid(element)] || []).filter(function(handler) {
-			    return handler
-			      && (!event.e  || handler.e == event.e)
-			      && (!event.ns || matcher.test(handler.ns))
-			      && (!fn       || zid(handler.fn) === zid(fn))
-			      && (!selector || handler.sel == selector)
-			})
+  		//返回的其实是 handlers[zid(element)] 中符合条件的句柄函数
+  		//handlers[0]
+	  	return (handlers[zid(element)] || []).filter(function(handler) {
+		    return handler
+		      && (!event.e  || handler.e == event.e)
+		      //通过matcher正则是检测handler的ns
+		      && (!event.ns || matcher.test(handler.ns))
+		      && (!fn       || zid(handler.fn) === zid(fn))
+		      && (!selector || handler.sel == selector)
+		})
+		/*
+			返回的句柄必须满足5个条件：
+				句柄必须存在
+				如果 event.e 存在，则句柄的事件名必须与 event 的事件名一致
+				如果命名空间存在，则句柄的命名空间必须要与事件的命名空间匹配（ matcherFor 的作用 ）
+				如果指定匹配的事件句柄为 fn ，则当前句柄 handler 的 _zid 必须与指定的句柄 fn 相一致
+				如果指定选择器 selector ，则当前句柄中的选择器必须与指定的选择器一致
+		*/
 	}
 	/*
-		支持focusin属性只需要检查window对象上是否存在onfocusin属性
+		支持focusin属性只需要检查window对象上是否存在onfocusin属性，
+		这是一个全局变量
 	*/
 	var focusinSupported = 'onfocusin' in window,
+		//做一个转换配置
 		focus = { focus: 'focusin', blur: 'focusout' },
 		hover = { mouseenter: 'mouseover', mouseleave: 'mouseout' };
 	function realEvent(type) {
 		/*
-			由于 focusin/focusout 事件浏览器支持程度还不是很好，
-			因此要对浏览器支持做一个检测，如果浏览器支持，则返回，否则，返回原事件名
+			将 focus/blur 转换成 focusin/focusout ，
+			将 mouseenter/mouseleave 转换成 mouseover/mouseout 事件。
+		*/
+		/*
+			focus 事件和 blur 事件并不支持事件冒泡
+			但是focusin支持事件冒泡
+			mouseenter 和 mouseleave 也不支持事件的冒泡，
+			但是 mouseover 和 mouseout 支持事件冒泡，
+			因此，这两个事件的冒泡处理也可以分别用 mouseover 和 mouseout 来模拟。
 		*/
 	    return hover[type] || (focusinSupported && focus[type]) || type
 	}
@@ -83,27 +109,42 @@
 		  	stopPropagation: 'isPropagationStopped'
 		};
 	function compatible(event, source) {
+		//isDefaultPrevented() 方法返回指定的 event 对象上是否调用了 preventDefault() 方法
 		/*
-			compatible 函数用来修正 event 对象的浏览器差异，使返回的event对象具有一致性
-			向 event 对象中添加了 isDefaultPrevented、isImmediatePropagationStopped、isPropagationStopped 几个方法，
+			compatible 函数用来修正 event 对象的浏览器差异，
+			向 event 对象中添加了 
+			isDefaultPrevented、isImmediatePropagationStopped、isPropagationStopped 几个方法，
 			对不支持 timeStamp 的浏览器，向 event 对象中添加 timeStamp 属性
+			使返回的event对象具有一致性
 		*/
+		/*
+			调用时可以使用
+			compatible(proxy, event)
+			或者
+			compatible(e)修正原生事件对象
+		*/
+		//如果传入source或者event连isDefaultPrevented都没有
 		if (source || !event.isDefaultPrevented) {
+			//如果 source 不存在，则将 event 赋值给 source
 		    source || (source = event)
-
+		    //遍历上面的配置
 		    $.each(eventMethods, function(name, predicate) {
 		      	var sourceMethod = source[name]
 		      	event[name] = function(){
 		        	this[predicate] = returnTrue
 		        	return sourceMethod && sourceMethod.apply(source, arguments)
 		      	}
+		      	//直接将isDefaultPrevented等初始化为 returnFalse 方法
 		      	event[predicate] = returnFalse
 		    })
 
 		    try {
-		      event.timeStamp || (event.timeStamp = Date.now())
+		        event.timeStamp || (event.timeStamp = Date.now())
 		    } catch (ignored) { }
-
+		   	/*
+		   		event.preventDefault()方法是用于取消事件的默认行为，
+		   		但此方法并不被ie支持，在ie下需要用window.event.returnValue = false;
+		   	*/
 		    if (source.defaultPrevented !== undefined ? source.defaultPrevented :
 		        'returnValue' in source ? source.returnValue === false :
 		        source.getPreventDefault && source.getPreventDefault())
@@ -113,18 +154,21 @@
 	}
 	var ignoreProperties = /^([A-Z]|returnValue$|layer[XY]$|webkitMovement[XY]$)/;
 	/*
-		事件触发的时候，返回给我们的 event 都不是原生的 event 对象，
+		创建代理对象
+		事件触发的时候，zepto返回的 event 都不是原生的 event 对象，
 		都是代理对象，这个就是代理对象的创建方法
 		ignoreProperties 用来排除 A-Z 开头，即所有大写字母开头的属性，
 		还有以returnValue 结尾，layerX/layerY ，webkitMovementX/webkitMovementY 结尾的非标准属性
 	*/
 	function createProxy(event) {
 		//在proxy对象的originalEvent中存储event
-	  	var key, proxy = { originalEvent: event }
+	  	var key, 
+	  		proxy = { originalEvent: event }
+	  	//代理对象的originalEvent保存原始event的引用
+	  	//将非大写属性拷贝，排除掉不需要的属性和值为 undefined 的属性
 	  	for (key in event)
-	  	//然后进行拷贝
-	    if (!ignoreProperties.test(key) && event[key] !== undefined) proxy[key] = event[key]
-
+	  		//然后进行拷贝
+	    	if (!ignoreProperties.test(key) && event[key] !== undefined) proxy[key] = event[key]
 	    return compatible(proxy, event)
 	}
 	/*
@@ -150,25 +194,35 @@
 		add 方法是向元素添加事件及事件响应，参数比较多
 	*/
 	function add(element, events, fn, data, selector, delegator, capture){
-		//获取或设置 id之后，set 为事件句柄容器
+		//获取或设置 id之后，set为事件句柄容器
 		var id = zid(element),
-			 set = (handlers[id] || (handlers[id] = []))
+			//handlers为全局对象
+			set = (handlers[id] || (handlers[id] = []))
+		//以空格隔开
 		events.split(/\s/).forEach(function(event){
+			//如果是ready的话，直接绑定$(document)
 		    if (event == 'ready') return $(document).ready(fn)
+		    //分解命名空间，返回一个对象
+			/*
+				{e: parts[0], ns: parts.slice(1).sort().join(' ')}
+			*/
 		    var handler   = parse(event)
 			//将参数赋给handeler对象，缓存起来
 		    handler.fn    = fn
 		    handler.sel   = selector
-		    // emulate mouseenter, mouseleave
+		    //hover = { mouseenter: 'mouseover', mouseleave: 'mouseout' };
+		    //对于hover事件的模拟
 		    if (handler.e in hover) fn = function(e){
 		        var related = e.relatedTarget
 		        if (!related || (related !== this && !$.contains(this, related)))
 		            return handler.fn.apply(this, arguments)
 		        }
+		    //del为delegator
 		    handler.del   = delegator
 		    var callback  = delegator || fn
 		    handler.proxy = function(e){
 		    	//e 为事件执行时的原生 event 对象，拿到统一接口的event对象。
+		    	// 返回的event对象为拷贝
 		        e = compatible(e)
 		        if (e.isImmediatePropagationStopped()) return
 		        //再扩展 e 对象，将 data 存到 e 的 data 属性上
@@ -178,7 +232,7 @@
 		        return result
 		    }
 		    handler.i = set.length
-		    //将handler push进handles数组中
+		    //将挂载信息的handler对象push进handles数组中
 		    set.push(handler)
 		    if ('addEventListener' in element)
 		      element.addEventListener(realEvent(handler.e), handler.proxy, eventCapture(handler, capture))
@@ -342,4 +396,5 @@
 	       else $(this).triggerHandler(event, args)
 	    })
 	}
+	//传入 Zepto 对象
 })(Zepto)
